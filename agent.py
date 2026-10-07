@@ -105,10 +105,55 @@ def run_agent(query: str, wardrobe: dict) -> dict:
       • A handler for ModelUnavailable, so a bad key produces a message rather
         than a stack trace. The import is already at the top of this file.
     """
+    import re
+
     session = new_session(query, wardrobe)
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    # Parse query into description, size, max_price
+    description = query
+    size = None
+    max_price = None
+
+    # Extract size (S, M, L, XL, etc.)
+    size_match = re.search(r'\b(XS|S|M|L|XL|XXL)\b', query, re.IGNORECASE)
+    if size_match:
+        size = size_match.group(1)
+        description = description.replace(size_match.group(0), "")
+
+    # Extract price (under $XX or $XX)
+    price_match = re.search(r'(?:under\s+)?\$?(\d+(?:\.\d{2})?)', query)
+    if price_match:
+        max_price = float(price_match.group(1))
+        description = description.replace(price_match.group(0), "")
+
+    session["parsed"] = {
+        "description": description.strip(),
+        "size": size,
+        "max_price": max_price
+    }
+
+    # Search for listings
+    search_results = search_listings(
+        description=session["parsed"]["description"],
+        size=session["parsed"]["size"],
+        max_price=session["parsed"]["max_price"]
+    )
+    session["search_results"] = search_results
+
+    # BRANCH: if nothing found, stop
+    if not search_results:
+        session["error"] = "No listings match that description. Try different keywords, size, or price."
+        return session
+
+    # Select first result
+    session["selected_item"] = search_results[0]
+
+    # Get outfit suggestions
+    session["outfit_suggestion"] = suggest_outfit(session["selected_item"], wardrobe)
+
+    # Create fit card
+    session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+
     return session
 
 
