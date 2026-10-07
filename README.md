@@ -39,7 +39,7 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
+FitFindr is an agent that helps thrift shoppers decide whether to buy something and how to style it. A user describes what they want — "vintage graphic tee under $30, size M" — and the agent searches for matches, suggests outfits using pieces they already own, and writes a short caption for posting. If nothing matches, it tells them what to try instead. The system carries information from one tool call to the next, so the item the search found is the exact one that reaches the styling tool.
 
 
 
@@ -59,24 +59,24 @@
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Filters the listings file by text description, size, and max price. Returns matches only.
+- **Inputs:** `description` (str), `size` (str or None), `max_price` (float)
+- **Returns:** A list of listing dicts, each with keys: id, title, description, price, size, platform, colors, style_tags, brand, category, condition
+- **When it has nothing:** Returns an empty list `[]` — never None, never crashes.
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Takes a new listing and the user's wardrobe, suggests which wardrobe pieces would pair well with the new item.
+- **Inputs:** `new_item` (dict with listing fields), `wardrobe` (dict with `items` key containing list of wardrobe dicts, or empty `{"items": []}`)
+- **Returns:** A list of outfit suggestions, each a dict with: `wardrobe_item_id`, `reason` (why it pairs well)
+- **When it has nothing:** If wardrobe is empty, return general styling suggestions as a string: "No wardrobe entered yet. This [item type] would pair well with [general style advice]."
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Writes a short social-media caption for a complete outfit (the new item plus suggested wardrobe pieces).
+- **Inputs:** `outfit` (dict with new_item and suggested_wardrobe_items), `new_item` (the listing dict)
+- **Returns:** A string caption, 1-3 sentences, suitable for posting to social media. Mentions the item, the styling, and why it works.
+- **When it has nothing:** If outfit is incomplete or empty, return: "Could not create a caption — outfit information was incomplete."
 
 ---
 
@@ -94,12 +94,13 @@
      function have to be real. -->
 
 **Branch rule:**
+If search_listings returns an empty list, put a message in the session saying "No listings match that description. Try different keywords, size, or price." and stop. Otherwise, take the first result and pass it to suggest_outfit.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex — extract size with `\b(XS|S|M|L|XL|XXL)\b` and price with `(?:under\s+)?\$?(\d+(?:\.\d{2})?)`
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** description → search_results → selected_item → outfit_suggestion → fit_card
 
 ---
 
@@ -113,25 +114,43 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+outfit:   Here are two specific outfit ideas using the new butterfly baby tee and pieces from your wardrobe that lean into that authentic Y2K aesthetic:
+
+### Outfit 1: The Casual Everyday Y2K Look
+This outfit balances the fitted, cropped silhouette of the baby tee with relaxed denim for a classic early-2000s street style vibe.
+
+*   **Top:** Y2K Butterfly Baby Tee
+*   **Bottoms:** Baggy straight-leg jeans (dark wash)
+*   **Footwear:** Chunky white sneakers
+
+fit card: Just scored this cutest little butterfly baby tee on Depop for only $18 and I am officially obsessed! 🦋✨ I love how easy it is to style—you can totally lean into the nostalgic street style with baggy denim and chunky sneakers, or grunge it up with khaki trousers and combat boots. Which vibe are we wearing today? 👇
 ```
 
 **The three tools, tested one at a time**
 
 ```
 $ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
+[{'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
+Here are two specific outfit ideas using the new butterfly baby tee and pieces from your wardrobe that lean into that authentic Y2K aesthetic:
 
+### Outfit 1: The Casual Everyday Y2K Look
+This outfit balances the fitted, cropped silhouette of the baby tee with relaxed denim for a classic early-2000s street style vibe.
+
+*   **Top:** Y2K Butterfly Baby Tee
+*   **Bottoms:** Baggy straight-leg jeans (dark wash)
+*   **Footwear:** Chunky white sneakers
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
-
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+Just scored this cutest little butterfly baby tee on Depop for only $18 and I am officially obsessed! 🦋✨ I love how easy it is to style—you can totally lean into the nostalgic street style with baggy denim and chunky sneakers, or grunge it up with khaki trousers and combat boots. Which vibe are we wearing today? 👇
 ```
 
 ---
@@ -147,15 +166,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Write the spec for search_listings based on what fields exist in the data file
+- *What came back:* A complete tool spec with input types, return value, and empty case
+- *What I changed:* Understood that empty list (not None) is what the branch checks, so that's the requirement
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Help implement the three tools in tools.py following the spec
+- *What came back:* Working implementations for search_listings (keyword scoring), suggest_outfit (model call with empty wardrobe handling), create_fit_card (caption generator)
+- *What I changed:* Confirmed the branch logic catches empty search results before calling the next tool
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
